@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # Servicio principal de transacciones blockchain
+  transaccion-blockchain:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: transaccion-blockchain-api
+    ports:
+      - "8080:8080"
+    environment:
+      # AWS Configuration
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME:-transacciones-blockchain}
+      
+      # Blockchain Configuration
+      - ALCHEMY_API_KEY=${ALCHEMY_API_KEY}
+      - BLOCKCHAIN_RPC_URL=${BLOCKCHAIN_RPC_URL}
+      - BLOCKCHAIN_NETWORK=${BLOCKCHAIN_NETWORK:-sepolia}
+      - BLOCKCHAIN_PRIVATE_KEY=${BLOCKCHAIN_PRIVATE_KEY}
+      - CONTRACT_ADDRESS=${CONTRACT_ADDRESS}
+      
+      # IPFS Configuration
+      - IPFS_HOST=ipfs
+      - IPFS_PORT=5001
+      
+      # Encryption
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      
+      # Server Configuration
+      - SERVER_PORT=8080
+      - GIN_MODE=${GIN_MODE:-debug}
+      
+      # Rate Limiting
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-60}
+    depends_on:
+      - ipfs
+    networks:
+      - blockchain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Nodo IPFS local
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: ipfs-node
+    ports:
+      - "4001:4001"     # Puerto P2P
+      - "5001:5001"     # API
+      - "8081:8080"     # Gateway (puerto modificado para evitar conflicto)
+    volumes:
+      - ipfs_data:/data/ipfs
+      - ipfs_staging:/export
+    networks:
+      - blockchain-network
+    restart: unless-stopped
+    environment:
+      - IPFS_PROFILE=server
+    healthcheck:
+      test: ["CMD", "ipfs", "version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # DynamoDB Local (opcional - para desarrollo/testing)
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /data"
+    ports:
+      - "8000:8000"
+    volumes:
+      - dynamodb_data:/data
+    networks:
+      - blockchain-network
+    restart: unless-stopped
+    profiles:
+      - local
+
+networks:
+  blockchain-network:
+    driver: bridge
+
+volumes:
+  ipfs_data:
+    driver: local
+  ipfs_staging:
+    driver: local
+  dynamodb_data:
+    driver: local
+
