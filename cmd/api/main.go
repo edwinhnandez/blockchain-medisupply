@@ -58,7 +58,7 @@ func main() {
 
 	// 3. Inicializar Blockchain Service
 	var blockchainService *services.BlockchainService
-	
+
 	// Construir RPC URL usando Alchemy, o usar URL personalizada si está configurada
 	var rpcURL string
 	if cfg.BlockchainRPCURL != "" {
@@ -76,21 +76,27 @@ func main() {
 		// Por ahora, usar una clave de prueba o desde variable de entorno
 		privateKey := os.Getenv("BLOCKCHAIN_PRIVATE_KEY")
 		if privateKey == "" {
-			log.Println("⚠️  ADVERTENCIA: BLOCKCHAIN_PRIVATE_KEY no configurada")
+			log.Println("ADVERTENCIA: BLOCKCHAIN_PRIVATE_KEY no configurada")
 			log.Println("   El servicio funcionará pero no podrá escribir en blockchain")
 		} else {
-			blockchainService, err = services.NewBlockchainService(rpcURL, privateKey)
+			// Obtener dirección del contrato (puede estar vacía para modo sin contrato)
+			contractAddress := cfg.ContractAddress
+			blockchainService, err = services.NewBlockchainService(rpcURL, privateKey, contractAddress)
 			if err != nil {
-				log.Printf("⚠️  ADVERTENCIA: Error inicializando blockchain: %v", err)
+				log.Printf("ADVERTENCIA: Error inicializando blockchain: %v", err)
 			} else {
-				log.Println("✅ Conectado a Blockchain (Alchemy)")
+				if contractAddress != "" {
+					log.Printf("✅ Conectado a Blockchain con Smart Contract: %s", contractAddress)
+				} else {
+					log.Println("✅ Conectado a Blockchain (modo sin contrato)")
+				}
 			}
 		}
 	}
 
 	// Si blockchain no está disponible, crear un servicio mock para no romper la aplicación
 	if blockchainService == nil {
-		log.Println("⚠️  Usando modo sin blockchain (solo almacenamiento off-chain)")
+		log.Println("Usando modo sin blockchain (solo almacenamiento off-chain)")
 	}
 
 	// 4. Inicializar servicios de negocio

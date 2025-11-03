@@ -36,6 +36,7 @@ func (s *DynamoDBService) GuardarTransaccion(ctx context.Context, transaccion *m
 
 	// Convertir a attributevalue
 	item, err := attributevalue.MarshalMap(transaccion)
+	fmt.Println("Guardando transacción en DynamoDB con ID:", transaccion.IDTransaction)
 	if err != nil {
 		return fmt.Errorf("error marshaling transacción: %w", err)
 	}

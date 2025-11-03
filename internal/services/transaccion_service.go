@@ -45,9 +45,11 @@ func (s *TransaccionService) RegistrarTransaccion(ctx context.Context, req *mode
 		ActorEmisor:   req.ActorEmisor,
 		Estado:        "pendiente",
 	}
+	fmt.Println("Transacción creada con ID:", transaccion.IDTransaction)
 
 	// 3. Almacenar datos detallados en IPFS (off-chain storage)
 	cid, err := s.ipfsService.AlmacenarJSON(ctx, transaccion.DatosEvento)
+	fmt.Println("Datos almacenados en IPFS con CID:", cid)
 	if err != nil {
 		return nil, fmt.Errorf("error almacenando en IPFS: %w", err)
 	}
@@ -55,6 +57,7 @@ func (s *TransaccionService) RegistrarTransaccion(ctx context.Context, req *mode
 
 	// 4. Calcular hash de integridad
 	hash := utils.CalcularHashTransaccion(transaccion)
+	fmt.Println("Hash de integridad calculado:", hash)
 	transaccion.HashEvento = hash
 
 	// 5. Registrar en DynamoDB primero
@@ -67,14 +70,17 @@ func (s *TransaccionService) RegistrarTransaccion(ctx context.Context, req *mode
 	go func() {
 		ctxBg := context.Background()
 		txHash, err := s.blockchainService.RegistrarEnBlockchain(ctxBg, hash, cid)
+		fmt.Println("Transacción registrada en blockchain con hash:", txHash)
 		if err != nil {
 			// Log error y actualizar estado
+			fmt.Println("Error registrando en blockchain:", err)
 			_ = s.dynamoDBService.ActualizarEstado(ctxBg, transaccion.IDTransaction, "fallido")
 			return
 		}
 
 		// Actualizar con hash de blockchain
 		_ = s.dynamoDBService.ActualizarHashBlockchain(ctxBg, transaccion.IDTransaction, txHash)
+		fmt.Println("Hash de blockchain actualizado en DynamoDB para ID:", transaccion.IDTransaction)
 	}()
 
 	return transaccion, nil

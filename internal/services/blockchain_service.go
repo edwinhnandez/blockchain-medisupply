@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 
@@ -11,19 +12,23 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+
+	"github.com/edinfamous/blockchain-medisupply/pkg/contracts"
 )
 
 // BlockchainService maneja las operaciones con la blockchain
 type BlockchainService struct {
-	client     *ethclient.Client
-	privateKey *ecdsa.PrivateKey
-	chainID    *big.Int
-	network    string
+	client          *ethclient.Client
+	privateKey      *ecdsa.PrivateKey
+	chainID         *big.Int
+	contractAddress common.Address
+	contract        *contracts.MediSupplyRegistry
 }
 
 // NewBlockchainService crea una nueva instancia de BlockchainService
 // rpcURL puede ser Alchemy, Infura, o cualquier otro proveedor RPC compatible con Ethereum
-func NewBlockchainService(rpcURL string, privateKeyHex string) (*BlockchainService, error) {
+// contractAddress es la dirección del smart contract desplegado (puede ser vacía para modo sin contrato)
+func NewBlockchainService(rpcURL string, privateKeyHex string, contractAddress string) (*BlockchainService, error) {
 	// Conectar al cliente Ethereum
 	client, err := ethclient.Dial(rpcURL)
 	if err != nil {
@@ -42,16 +47,88 @@ func NewBlockchainService(rpcURL string, privateKeyHex string) (*BlockchainServi
 		return nil, fmt.Errorf("error obteniendo chainID: %w", err)
 	}
 
-	return &BlockchainService{
+	service := &BlockchainService{
 		client:     client,
 		privateKey: privateKey,
 		chainID:    chainID,
-	}, nil
+	}
+
+	// Si hay una dirección de contrato, inicializar el contrato
+	if contractAddress != "" {
+		address := common.HexToAddress(contractAddress)
+		if !common.IsHexAddress(contractAddress) {
+			return nil, fmt.Errorf("dirección de contrato inválida: %s", contractAddress)
+		}
+
+		contract, err := contracts.NewMediSupplyRegistry(address, client)
+		if err != nil {
+			return nil, fmt.Errorf("error inicializando contrato: %w", err)
+		}
+
+		service.contractAddress = address
+		service.contract = contract
+	}
+
+	return service, nil
 }
 
-// RegistrarEnBlockchain registra un hash en la blockchain
-// En una implementación real, esto interactuaría con un smart contract
+// RegistrarEnBlockchain registra un hash en la blockchain usando el smart contract
+// Si el contrato está configurado, usa el contrato. Si no, usa transacciones simples.
 func (s *BlockchainService) RegistrarEnBlockchain(ctx context.Context, hash, cid string) (string, error) {
+	// Si tenemos un contrato configurado, usarlo
+	if s.contract != nil {
+		return s.registrarConContrato(ctx, hash, cid)
+	}
+
+	// Fallback: usar transacción simple (modo compatible hacia atrás)
+	return s.registrarConTransaccionSimple(ctx, hash, cid)
+}
+
+// registrarConContrato registra un hash usando el smart contract
+func (s *BlockchainService) registrarConContrato(ctx context.Context, hash, cid string) (string, error) {
+	// Preparar opciones de transacción
+	opts, err := s.GetTransactionOpts(ctx)
+	if err != nil {
+		return "", fmt.Errorf("error obteniendo opciones de transacción: %w", err)
+	}
+
+	// Convertir hash string a bytes32
+	hashBytes, err := hex.DecodeString(hash)
+	if err != nil {
+		return "", fmt.Errorf("error decodificando hash: %w", err)
+	}
+	if len(hashBytes) != 32 {
+		return "", fmt.Errorf("hash debe tener 32 bytes, tiene %d", len(hashBytes))
+	}
+	var hashBytes32 [32]byte
+	copy(hashBytes32[:], hashBytes)
+
+	// Crear hash de transacción único (hash de hash + timestamp)
+	hashTransaccionBytes := crypto.Keccak256([]byte(hash + cid))
+	var hashTransaccion [32]byte
+	copy(hashTransaccion[:], hashTransaccionBytes[:32])
+
+	// Llamar al contrato
+	tx, err := s.contract.RegistrarHash(opts, hashTransaccion, hashBytes32, cid)
+	if err != nil {
+		return "", fmt.Errorf("error registrando en contrato: %w", err)
+	}
+
+	// Esperar confirmación
+	receipt, err := bind.WaitMined(ctx, s.client, tx)
+	if err != nil {
+		return "", fmt.Errorf("error esperando confirmación: %w", err)
+	}
+
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		return "", fmt.Errorf("transacción falló en blockchain")
+	}
+
+	return tx.Hash().Hex(), nil
+}
+
+// registrarConTransaccionSimple registra usando una transacción simple (fallback)
+func (s *BlockchainService) registrarConTransaccionSimple(ctx context.Context, hash, cid string) (string, error) {
 	publicKey := s.privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
@@ -75,14 +152,12 @@ func (s *BlockchainService) RegistrarEnBlockchain(ctx context.Context, hash, cid
 	// Preparar datos: hash + CID concatenados
 	data := []byte(fmt.Sprintf("%s:%s", hash, cid))
 
-	// Crear transacción
-	// En producción, esto sería una llamada a un smart contract
-	// Por ahora, guardamos los datos en el campo data de la transacción
+	// Crear transacción simple
 	tx := types.NewTransaction(
 		nonce,
-		common.HexToAddress("0x0000000000000000000000000000000000000000"), // Dirección nula o del contrato
+		common.HexToAddress("0x0000000000000000000000000000000000000000"),
 		big.NewInt(0),
-		uint64(100000), // Gas limit
+		uint64(100000),
 		gasPrice,
 		data,
 	)
@@ -99,12 +174,48 @@ func (s *BlockchainService) RegistrarEnBlockchain(ctx context.Context, hash, cid
 		return "", fmt.Errorf("error enviando transacción: %w", err)
 	}
 
-	// Retornar hash de la transacción
 	return signedTx.Hash().Hex(), nil
 }
 
-// VerificarEnBlockchain verifica un hash contra la blockchain
+// VerificarEnBlockchain verifica un hash contra la blockchain usando el smart contract
 func (s *BlockchainService) VerificarEnBlockchain(ctx context.Context, txHash, hashEsperado string) (bool, error) {
+	// Si tenemos un contrato, usar el método del contrato
+	if s.contract != nil {
+		return s.verificarConContrato(ctx, txHash, hashEsperado)
+	}
+
+	// Fallback: verificar en transacción simple
+	return s.verificarConTransaccionSimple(ctx, txHash, hashEsperado)
+}
+
+// verificarConContrato verifica usando el smart contract
+func (s *BlockchainService) verificarConContrato(ctx context.Context, txHash, hashEsperado string) (bool, error) {
+	// Convertir hash esperado a bytes32
+	hashBytes, err := hex.DecodeString(hashEsperado)
+	if err != nil {
+		return false, fmt.Errorf("error decodificando hash: %w", err)
+	}
+	if len(hashBytes) != 32 {
+		return false, fmt.Errorf("hash debe tener 32 bytes")
+	}
+	var hashBytes32 [32]byte
+	copy(hashBytes32[:], hashBytes)
+
+	// El txHash es el hashTransaccion que usamos en el registro
+	var hashTransaccion [32]byte
+	copy(hashTransaccion[:], common.HexToHash(txHash).Bytes())
+
+	// Llamar al contrato
+	valido, err := s.contract.VerificarHash(&bind.CallOpts{Context: ctx}, hashTransaccion, hashBytes32)
+	if err != nil {
+		return false, fmt.Errorf("error verificando en contrato: %w", err)
+	}
+
+	return valido, nil
+}
+
+// verificarConTransaccionSimple verifica en una transacción simple (fallback)
+func (s *BlockchainService) verificarConTransaccionSimple(ctx context.Context, txHash, hashEsperado string) (bool, error) {
 	// Obtener la transacción
 	tx, isPending, err := s.client.TransactionByHash(ctx, common.HexToHash(txHash))
 	if err != nil {

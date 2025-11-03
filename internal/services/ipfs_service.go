@@ -43,6 +43,7 @@ func (s *IPFSService) AlmacenarJSON(ctx context.Context, data string) (string, e
 
 // Almacenar almacena datos en IPFS y retorna el CID
 func (s *IPFSService) Almacenar(ctx context.Context, data []byte) (string, error) {
+	fmt.Println("Almacenando datos en IPFS...", s.host, s.port)
 	url := fmt.Sprintf("http://%s:%s/api/v0/add", s.host, s.port)
 
 	// Crear multipart form data
