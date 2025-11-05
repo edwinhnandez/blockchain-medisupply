@@ -107,9 +107,10 @@ func main() {
 	transaccionHandler := handlers.NewTransaccionHandler(transaccionService)
 	oracleHandler := handlers.NewOracleHandler(oracleService)
 	healthHandler := handlers.NewHealthHandler(ipfsService, blockchainService)
+	ipfsHandler := handlers.NewIPFSHandler(ipfsService)
 
 	// Configurar router
-	router := setupRouter(cfg, transaccionHandler, oracleHandler, healthHandler)
+	router := setupRouter(cfg, transaccionHandler, oracleHandler, healthHandler, ipfsHandler)
 
 	// Iniciar servidor con graceful shutdown
 	srv := &http.Server{
@@ -151,7 +152,7 @@ func main() {
 }
 
 // setupRouter configura todas las rutas de la API
-func setupRouter(cfg *appConfig.Config, transaccionHandler *handlers.TransaccionHandler, oracleHandler *handlers.OracleHandler, healthHandler *handlers.HealthHandler) *gin.Engine {
+func setupRouter(cfg *appConfig.Config, transaccionHandler *handlers.TransaccionHandler, oracleHandler *handlers.OracleHandler, healthHandler *handlers.HealthHandler, ipfsHandler *handlers.IPFSHandler) *gin.Engine {
 	router := gin.New()
 
 	// Middleware globales
@@ -184,6 +185,14 @@ func setupRouter(cfg *appConfig.Config, transaccionHandler *handlers.Transaccion
 			oracle.GET("/historial/:id", oracleHandler.ObtenerHistorialVerificado)
 			oracle.GET("/validar/:id", oracleHandler.ValidarCadenaSupply)
 		}
+
+		// Rutas de IPFS
+		ipfs := v1.Group("/ipfs")
+		{
+			ipfs.GET("/archivos", ipfsHandler.ListarArchivos)
+			ipfs.GET("/archivo/:cid", ipfsHandler.ObtenerArchivo)
+			ipfs.GET("/estadisticas", ipfsHandler.ObtenerEstadisticas)
+		}
 	}
 
 	// Ruta raíz con información de la API
@@ -198,6 +207,7 @@ func setupRouter(cfg *appConfig.Config, transaccionHandler *handlers.Transaccion
 				"api":           "/api/v1",
 				"transacciones": "/api/v1/transaccion",
 				"oracle":        "/api/v1/oracle",
+				"ipfs":          "/api/v1/ipfs",
 			},
 		})
 	})

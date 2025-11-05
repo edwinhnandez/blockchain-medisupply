@@ -38,6 +38,8 @@ func NewIPFSService(host, port string) *IPFSService {
 
 // AlmacenarJSON almacena datos JSON en IPFS y retorna el CID
 func (s *IPFSService) AlmacenarJSON(ctx context.Context, data string) (string, error) {
+	fmt.Println("Almacenando datos en IPFS...", s.host, s.port)
+	fmt.Println("Datos a almacenar:", data)
 	return s.Almacenar(ctx, []byte(data))
 }
 
@@ -45,11 +47,12 @@ func (s *IPFSService) AlmacenarJSON(ctx context.Context, data string) (string, e
 func (s *IPFSService) Almacenar(ctx context.Context, data []byte) (string, error) {
 	fmt.Println("Almacenando datos en IPFS...", s.host, s.port)
 	url := fmt.Sprintf("http://%s:%s/api/v0/add", s.host, s.port)
-
+	fmt.Println("URL de almacenamiento en IPFS:", url)
 	// Crear multipart form data
 	body := &bytes.Buffer{}
+	fmt.Println("Body:", body)
 	writer := multipart.NewWriter(body)
-
+	fmt.Println("Writer:", writer)
 	part, err := writer.CreateFormFile("file", "data.json")
 	if err != nil {
 		return "", fmt.Errorf("error creando form file: %w", err)
@@ -72,6 +75,7 @@ func (s *IPFSService) Almacenar(ctx context.Context, data []byte) (string, error
 
 	// Ejecutar request
 	resp, err := s.httpClient.Do(req)
+	fmt.Println("Response:", resp)
 	if err != nil {
 		return "", fmt.Errorf("error ejecutando request a IPFS: %w", err)
 	}

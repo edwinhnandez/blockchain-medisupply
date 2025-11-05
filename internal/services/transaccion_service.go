@@ -54,6 +54,19 @@ func (s *TransaccionService) RegistrarTransaccion(ctx context.Context, req *mode
 		return nil, fmt.Errorf("error almacenando en IPFS: %w", err)
 	}
 	transaccion.IPFSCid = cid
+	fmt.Println("Transacción con IPFSCid:", transaccion.IPFSCid)
+	fmt.Println("Transacción con DatosEvento:", transaccion.DatosEvento)
+	fmt.Println("Transacción con ActorEmisor:", transaccion.ActorEmisor)
+	fmt.Println("Transacción con Estado:", transaccion.Estado)
+	fmt.Println("Transacción con CreatedAt:", transaccion.CreatedAt)
+	fmt.Println("Transacción con UpdatedAt:", transaccion.UpdatedAt)
+	fmt.Println("Transacción con TipoEvento:", transaccion.TipoEvento)
+	fmt.Println("Transacción con IDProducto:", transaccion.IDProducto)
+	fmt.Println("Transacción con FechaEvento:", transaccion.FechaEvento)
+	fmt.Println("Transacción con HashEvento:", transaccion.HashEvento)
+	fmt.Println("Transacción con DirectionBlockchain:", transaccion.DirectionBlockchain)
+	fmt.Println("Transacción con FirmaDigital:", transaccion.FirmaDigital)
+	fmt.Println("Transacción con IDTransaction:", transaccion.IDTransaction)
 
 	// 4. Calcular hash de integridad
 	hash := utils.CalcularHashTransaccion(transaccion)
@@ -68,8 +81,9 @@ func (s *TransaccionService) RegistrarTransaccion(ctx context.Context, req *mode
 	// 6. Enviar transacción a blockchain (solo hash + CID) - asíncrono
 	go func() {
 		ctxBg := context.Background()
+		fmt.Println("Registrando transacción en blockchain con hash:", hash, "y CID:", cid)
 		txHash, err := s.blockchainService.RegistrarEnBlockchain(ctxBg, hash, cid)
-		fmt.Println("Transacción registrada en blockchain con hash:", txHash)
+		fmt.Println("Transacción registrada en blockchain con hash:", txHash, "y CID:", cid)
 		if err != nil {
 			// Log error y actualizar estado
 			fmt.Println("Error registrando en blockchain:", err)
