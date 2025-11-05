@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -39,10 +40,18 @@ func NewBlockchainService(rpcURL string, privateKeyHex string, contractAddress s
 	fmt.Println("privateKeyHex:", privateKeyHex)
 	fmt.Println("contractAddress:", contractAddress)
 
+	// Normalizar y validar private key
+	privateKeyHex = normalizePrivateKey(privateKeyHex)
+	
+	// Validar longitud
+	if len(privateKeyHex) != 64 {
+		return nil, fmt.Errorf("private key debe tener 64 caracteres hexadecimales (32 bytes), tiene %d caracteres. Ejemplo: ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", len(privateKeyHex))
+	}
+	
 	// Parsear private key
 	privateKey, err := crypto.HexToECDSA(privateKeyHex)
 	if err != nil {
-		return nil, fmt.Errorf("error parseando private key: %w", err)
+		return nil, fmt.Errorf("error parseando private key: %w. Asegúrate de que sea un hex válido de 64 caracteres", err)
 	}
 
 	// Obtener chainID
@@ -313,4 +322,25 @@ func (s *BlockchainService) Close() {
 	if s.client != nil {
 		s.client.Close()
 	}
+}
+
+// normalizePrivateKey normaliza una clave privada removiendo espacios, prefijos, etc.
+// Retorna una clave de 64 caracteres hexadecimales (sin prefijo 0x)
+func normalizePrivateKey(key string) string {
+	// Remover espacios
+	key = strings.TrimSpace(key)
+	
+	// Remover prefijo 0x si existe
+	key = strings.TrimPrefix(key, "0x")
+	key = strings.TrimPrefix(key, "0X")
+	
+	// Remover espacios adicionales
+	key = strings.ReplaceAll(key, " ", "")
+	key = strings.ReplaceAll(key, "\n", "")
+	key = strings.ReplaceAll(key, "\t", "")
+	
+	// Convertir a minúsculas para consistencia
+	key = strings.ToLower(key)
+	
+	return key
 }

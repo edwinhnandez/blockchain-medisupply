@@ -66,7 +66,6 @@ func (s *TransaccionService) RegistrarTransaccion(ctx context.Context, req *mode
 	}
 
 	// 6. Enviar transacción a blockchain (solo hash + CID) - asíncrono
-	// En producción, esto podría ser una cola para no bloquear la respuesta
 	go func() {
 		ctxBg := context.Background()
 		txHash, err := s.blockchainService.RegistrarEnBlockchain(ctxBg, hash, cid)
