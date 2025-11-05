@@ -34,6 +34,10 @@ func NewBlockchainService(rpcURL string, privateKeyHex string, contractAddress s
 	if err != nil {
 		return nil, fmt.Errorf("error conectando a Ethereum: %w", err)
 	}
+	fmt.Println("Conectado a Ethereum")
+	fmt.Println("rpcURL:", rpcURL)
+	fmt.Println("privateKeyHex:", privateKeyHex)
+	fmt.Println("contractAddress:", contractAddress)
 
 	// Parsear private key
 	privateKey, err := crypto.HexToECDSA(privateKeyHex)
