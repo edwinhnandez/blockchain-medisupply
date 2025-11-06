@@ -50,3 +50,13 @@ type VerificacionResponse struct {
 	DatosIPFSVerificados bool   `json:"datosIPFSVerificados"`
 	Mensaje              string `json:"mensaje"`
 }
+
+// EstadoBlockchainResponse representa el estado del registro en blockchain
+type EstadoBlockchainResponse struct {
+	IDTransaction       string `json:"idTransaction"`
+	Estado              string `json:"estado"`              // pendiente, confirmado, fallido
+	RegistradoEnBlockchain bool   `json:"registradoEnBlockchain"` // true si tiene txHash
+	DirectionBlockchain string `json:"directionBlockchain"` // txHash de blockchain
+	Mensaje             string `json:"mensaje"`
+	Timestamp           string `json:"timestamp,omitempty"`
+}

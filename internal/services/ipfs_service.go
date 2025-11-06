@@ -31,9 +31,19 @@ func NewIPFSService(host, port string) *IPFSService {
 		host: host,
 		port: port,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 60 * time.Second, // Aumentado a 60 segundos para evitar timeouts
 		},
 	}
+}
+
+// GetHost retorna el host de IPFS
+func (s *IPFSService) GetHost() string {
+	return s.host
+}
+
+// GetPort retorna el puerto de IPFS
+func (s *IPFSService) GetPort() string {
+	return s.port
 }
 
 // AlmacenarJSON almacena datos JSON en IPFS y retorna el CID
@@ -45,9 +55,9 @@ func (s *IPFSService) AlmacenarJSON(ctx context.Context, data string) (string, e
 
 // Almacenar almacena datos en IPFS y retorna el CID
 func (s *IPFSService) Almacenar(ctx context.Context, data []byte) (string, error) {
-	fmt.Println("Almacenando datos en IPFS...", s.host, s.port)
+	fmt.Printf("🟡 IPFS: Iniciando almacenamiento en %s:%s\n", s.host, s.port)
 	url := fmt.Sprintf("http://%s:%s/api/v0/add", s.host, s.port)
-	fmt.Println("URL de almacenamiento en IPFS:", url)
+	fmt.Printf("🟡 IPFS: URL de almacenamiento: %s\n", url)
 	// Crear multipart form data
 	body := &bytes.Buffer{}
 	fmt.Println("Body:", body)
@@ -74,11 +84,20 @@ func (s *IPFSService) Almacenar(ctx context.Context, data []byte) (string, error
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	// Ejecutar request
+	fmt.Printf("🟡 IPFS: Enviando request (timeout: 60s)...\n")
+	startTime := time.Now()
 	resp, err := s.httpClient.Do(req)
-	fmt.Println("Response:", resp)
+	elapsed := time.Since(startTime)
+	fmt.Printf("🟡 IPFS: Request completado en %v\n", elapsed)
+	
 	if err != nil {
-		return "", fmt.Errorf("error ejecutando request a IPFS: %w", err)
+		// Verificar si es timeout
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("timeout al conectar con IPFS después de %v: verifique que IPFS esté corriendo en %s:%s", elapsed, s.host, s.port)
+		}
+		return "", fmt.Errorf("error ejecutando request a IPFS después de %v: %w", elapsed, err)
 	}
+	fmt.Printf("🟡 IPFS: Response recibido - Status: %d\n", resp.StatusCode)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {

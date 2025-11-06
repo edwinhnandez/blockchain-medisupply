@@ -171,9 +171,11 @@ func setupRouter(cfg *appConfig.Config, transaccionHandler *handlers.Transaccion
 		// Rutas de transacciones
 		transacciones := v1.Group("/transaccion")
 		{
+			log.Println("📝 Registrando ruta: POST /api/v1/transaccion/registrar")
 			transacciones.POST("/registrar", transaccionHandler.RegistrarTransaccion)
-			transacciones.GET("/:id", transaccionHandler.ObtenerTransaccion)
+			transacciones.GET("/estado-blockchain/:id", transaccionHandler.ObtenerEstadoBlockchain)
 			transacciones.GET("/verificar/:id", transaccionHandler.VerificarTransaccion)
+			transacciones.GET("/:id", transaccionHandler.ObtenerTransaccion)
 			transacciones.GET("", transaccionHandler.ListarTransacciones)
 			transacciones.GET("/producto/:id", transaccionHandler.ObtenerTransaccionesPorProducto)
 		}
@@ -209,6 +211,17 @@ func setupRouter(cfg *appConfig.Config, transaccionHandler *handlers.Transaccion
 				"oracle":        "/api/v1/oracle",
 				"ipfs":          "/api/v1/ipfs",
 			},
+		})
+	})
+
+	// Handler para rutas no encontradas (útil para debugging)
+	router.NoRoute(func(c *gin.Context) {
+		log.Printf("⚠️  Ruta no encontrada: %s %s", c.Request.Method, c.Request.URL.Path)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Ruta no encontrada",
+			"method":  c.Request.Method,
+			"path":    c.Request.URL.Path,
+			"message": "Verifica que la ruta y el método HTTP sean correctos",
 		})
 	})
 

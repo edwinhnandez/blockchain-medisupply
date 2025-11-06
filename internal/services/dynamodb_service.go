@@ -46,6 +46,7 @@ func (s *DynamoDBService) GuardarTransaccion(ctx context.Context, transaccion *m
 		TableName: aws.String(s.tableName),
 		Item:      item,
 	})
+	fmt.Println("Transacción guardada en DynamoDB con ID:", transaccion.IDTransaction)
 	if err != nil {
 		return fmt.Errorf("error guardando en DynamoDB: %w", err)
 	}
