@@ -107,22 +107,23 @@ func (s *DynamoDBService) ObtenerTransaccionesPorProducto(ctx context.Context, i
 	return transacciones, nil
 }
 
-// ActualizarHashBlockchain actualiza el hash de blockchain de una transacción
-func (s *DynamoDBService) ActualizarHashBlockchain(ctx context.Context, idTransaccion, hashBlockchain string) error {
+// ActualizarHashesBlockchain actualiza el hash lógico y el hash de la transacción de Ethereum de una transacción
+func (s *DynamoDBService) ActualizarHashesBlockchain(ctx context.Context, idTransaccion, logicalHash, ethereumTxHash string) error {
 	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(s.tableName),
 		Key: map[string]types.AttributeValue{
 			"idTransaction": &types.AttributeValueMemberS{Value: idTransaccion},
 		},
-		UpdateExpression: aws.String("SET directionBlockchain = :hash, updatedAt = :updatedAt, estado = :estado"),
+		UpdateExpression: aws.String("SET directionBlockchain = :logicalHash, ethereumTxHash = :ethereumTxHash, updatedAt = :updatedAt, estado = :estado"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":hash":      &types.AttributeValueMemberS{Value: hashBlockchain},
-			":updatedAt": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-			":estado":    &types.AttributeValueMemberS{Value: "confirmado"},
+			":logicalHash":   &types.AttributeValueMemberS{Value: logicalHash},
+			":ethereumTxHash": &types.AttributeValueMemberS{Value: ethereumTxHash},
+			":updatedAt":     &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
+			":estado":        &types.AttributeValueMemberS{Value: "confirmado"},
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("error actualizando hash blockchain: %w", err)
+		return fmt.Errorf("error actualizando hashes de blockchain: %w", err)
 	}
 
 	return nil

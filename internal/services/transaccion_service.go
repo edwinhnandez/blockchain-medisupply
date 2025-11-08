@@ -139,7 +139,7 @@ func (s *TransaccionService) registrarEnBlockchainAsync(idTransaccion, hash, cid
 		return
 	}
 
-	txHash, err := s.blockchainService.RegistrarEnBlockchain(ctxBg, hash, cid)
+	logicalHash, ethereumTxHash, err := s.blockchainService.RegistrarEnBlockchain(ctxBg, hash, cid)
 	if err != nil {
 		// Log error y actualizar estado
 		fmt.Printf("🔴 Blockchain: Error registrando transacción %s en blockchain: %v\n", idTransaccion, err)
@@ -149,15 +149,15 @@ func (s *TransaccionService) registrarEnBlockchainAsync(idTransaccion, hash, cid
 		return
 	}
 
-	fmt.Printf("🟢 Blockchain: Transacción %s registrada en blockchain con txHash: %s\n", idTransaccion, txHash)
+	fmt.Printf("🟢 Blockchain: Transacción %s registrada en blockchain con hash lógico: %s, TxHash Ethereum: %s\n", idTransaccion, logicalHash, ethereumTxHash)
 
-	// Actualizar con hash de blockchain (esto también actualiza el estado a "confirmado")
-	if err := s.dynamoDBService.ActualizarHashBlockchain(ctxBg, idTransaccion, txHash); err != nil {
-		fmt.Printf("🔴 Blockchain: Error actualizando hash de blockchain en DynamoDB: %v\n", err)
+	// Actualizar con hash lógico y hash de transacción de Ethereum (esto también actualiza el estado a "confirmado")
+	if err := s.dynamoDBService.ActualizarHashesBlockchain(ctxBg, idTransaccion, logicalHash, ethereumTxHash); err != nil {
+		fmt.Printf("🔴 Blockchain: Error actualizando hashes de blockchain en DynamoDB: %v\n", err)
 		return
 	}
 
-	fmt.Printf("🟢 Blockchain: Hash de blockchain actualizado en DynamoDB para transacción %s (estado: confirmado)\n", idTransaccion)
+	fmt.Printf("🟢 Blockchain: Hashes de blockchain actualizados en DynamoDB para transacción %s (estado: confirmado)\n", idTransaccion)
 }
 
 // ObtenerTransaccion obtiene una transacción por ID
@@ -171,11 +171,16 @@ func (s *TransaccionService) ObtenerTransaccion(ctx context.Context, idTransacci
 
 // VerificarIntegridad verifica la integridad de una transacción contra blockchain e IPFS
 func (s *TransaccionService) VerificarIntegridad(ctx context.Context, idTransaccion string) (*models.VerificacionResponse, error) {
+	fmt.Printf("🔍 VERIFICAR: Iniciando verificación de integridad para ID: %s\n", idTransaccion)
+
 	// 1. Obtener datos de DynamoDB
 	transaccion, err := s.dynamoDBService.ObtenerTransaccion(ctx, idTransaccion)
 	if err != nil {
+		fmt.Printf("🔴 VERIFICAR: Error obteniendo transacción %s de DynamoDB: %v\n", idTransaccion, err)
 		return nil, fmt.Errorf("error obteniendo transacción: %w", err)
 	}
+	fmt.Printf("🔍 VERIFICAR: Transacción obtenida de DynamoDB: ID=%s, CID=%s, HashEvento=%s, DatosEvento=%s, DirectionBlockchain=%s\n",
+		transaccion.IDTransaction, transaccion.IPFSCid, transaccion.HashEvento, transaccion.DatosEvento, transaccion.DirectionBlockchain)
 
 	response := &models.VerificacionResponse{
 		IDTransaction: idTransaccion,
@@ -185,42 +190,64 @@ func (s *TransaccionService) VerificarIntegridad(ctx context.Context, idTransacc
 	// 2. Verificar que tenga hash de blockchain
 	if transaccion.DirectionBlockchain == "" {
 		response.Mensaje = "Transacción aún no confirmada en blockchain"
+		fmt.Printf("🔍 VERIFICAR: Transacción %s aún no confirmada en blockchain. DirectionBlockchain está vacío.\n", idTransaccion)
 		return response, nil
 	}
 
 	// 3. Calcular hash local
 	hashLocal := utils.CalcularHashTransaccion(transaccion)
 	response.HashLocal = hashLocal
+	fmt.Printf("🔍 VERIFICAR: Hash local calculado: %s\n", hashLocal)
 
 	// 4. Verificar hash contra registro blockchain
+	fmt.Printf("🔍 VERIFICAR: Verificando hash %s contra blockchain con DirectionBlockchain: %s\n", hashLocal, transaccion.DirectionBlockchain)
 	verificadoBlockchain, err := s.blockchainService.VerificarEnBlockchain(ctx, transaccion.DirectionBlockchain, hashLocal)
 	if err != nil {
+		fmt.Printf("🔴 VERIFICAR: Error verificando en blockchain para %s: %v\n", idTransaccion, err)
 		response.Mensaje = fmt.Sprintf("Error verificando blockchain: %v", err)
 		return response, nil
 	}
+	fmt.Printf("🔍 VERIFICAR: Resultado verificación blockchain: %t\n", verificadoBlockchain)
 
 	// 5. Recuperar datos de IPFS usando CID
+	fmt.Printf("🔍 VERIFICAR: Recuperando datos de IPFS con CID: %s\n", transaccion.IPFSCid)
 	datosIPFS, err := s.ipfsService.RecuperarJSON(ctx, transaccion.IPFSCid)
 	if err != nil {
+		fmt.Printf("🔴 VERIFICAR: Error recuperando de IPFS para %s (CID: %s): %v\n", idTransaccion, transaccion.IPFSCid, err)
 		response.Mensaje = fmt.Sprintf("Error recuperando de IPFS: %v", err)
 		return response, nil
 	}
+	fmt.Printf("🔍 VERIFICAR: Datos recuperados de IPFS (primeros 100 chars): %s...\n", datosIPFS[:min(100, len(datosIPFS))])
 
 	// 6. Verificar que los datos de IPFS coincidan
+	fmt.Printf("🔍 VERIFICAR: Comparando datos de IPFS con DatosEvento de DynamoDB.\n")
+	fmt.Printf("🔍 VERIFICAR: Datos IPFS: %s\n", datosIPFS)
+	fmt.Printf("🔍 VERIFICAR: Datos DynamoDB: %s\n", transaccion.DatosEvento)
 	datosIPFSVerificados := (datosIPFS == transaccion.DatosEvento)
 	response.DatosIPFSVerificados = datosIPFSVerificados
 	response.HashBlockchain = transaccion.HashEvento
+	fmt.Printf("🔍 VERIFICAR: Coincidencia de datos IPFS y DynamoDB: %t\n", datosIPFSVerificados)
 
 	// 7. Resultado final
 	response.Verificado = verificadoBlockchain && datosIPFSVerificados
+	fmt.Printf("🔍 VERIFICAR: Resultado final de verificación (Blockchain && IPFS): %t\n", response.Verificado)
 
 	if response.Verificado {
 		response.Mensaje = "Transacción verificada exitosamente"
 	} else {
 		response.Mensaje = "Transacción NO verificada: discrepancia detectada"
+		fmt.Printf("🔴 VERIFICAR: Discrepancia detectada para transacción %s. Blockchain: %t, IPFS: %t\n", idTransaccion, verificadoBlockchain, datosIPFSVerificados)
 	}
 
 	return response, nil
+}
+
+// min es una función auxiliar para obtener el mínimo de dos enteros
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // ListarTransacciones lista todas las transacciones
@@ -247,6 +274,7 @@ func (s *TransaccionService) ObtenerEstadoBlockchain(ctx context.Context, idTran
 		Estado:                 transaccion.Estado,
 		RegistradoEnBlockchain: transaccion.DirectionBlockchain != "",
 		DirectionBlockchain:    transaccion.DirectionBlockchain,
+		EthereumTxHash:         transaccion.EthereumTxHash, // Incluir el hash de la transacción de Ethereum
 		Timestamp:              transaccion.UpdatedAt.Format(time.RFC3339),
 	}
 
@@ -254,7 +282,7 @@ func (s *TransaccionService) ObtenerEstadoBlockchain(ctx context.Context, idTran
 	switch transaccion.Estado {
 	case "confirmado":
 		if transaccion.DirectionBlockchain != "" {
-			response.Mensaje = fmt.Sprintf("Transacción registrada exitosamente en blockchain. TxHash: %s", transaccion.DirectionBlockchain)
+			response.Mensaje = fmt.Sprintf("Transacción registrada exitosamente en blockchain. Hash Lógico: %s, TxHash Ethereum: %s", transaccion.DirectionBlockchain, transaccion.EthereumTxHash)
 		} else {
 			response.Mensaje = "Transacción confirmada pero sin hash de blockchain (puede estar en proceso)"
 		}
