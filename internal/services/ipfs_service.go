@@ -89,7 +89,7 @@ func (s *IPFSService) Almacenar(ctx context.Context, data []byte) (string, error
 	resp, err := s.httpClient.Do(req)
 	elapsed := time.Since(startTime)
 	fmt.Printf("🟡 IPFS: Request completado en %v\n", elapsed)
-	
+
 	if err != nil {
 		// Verificar si es timeout
 		if ctx.Err() == context.DeadlineExceeded {
@@ -115,7 +115,38 @@ func (s *IPFSService) Almacenar(ctx context.Context, data []byte) (string, error
 		return "", fmt.Errorf("no se pudo obtener CID de la respuesta IPFS")
 	}
 
+	// Pinear el CID para asegurar su persistencia
+	if err := s.pinCID(ctx, result.Hash); err != nil {
+		// No retornar error fatal, pero sí loguearlo. El archivo fue añadido.
+		fmt.Printf("⚠️ IPFS: ADVERTENCIA: no se pudo pinear el CID %s: %v\n", result.Hash, err)
+	}
+
 	return result.Hash, nil
+}
+
+// pinCID pinea un CID en el nodo IPFS para asegurar su persistencia
+func (s *IPFSService) pinCID(ctx context.Context, cid string) error {
+	fmt.Printf("🟡 IPFS: Pineando CID %s...\n", cid)
+	url := fmt.Sprintf("http://%s:%s/api/v0/pin/add?arg=%s", s.host, s.port, cid)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	if err != nil {
+		return fmt.Errorf("error creando request de pineo: %w", err)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("error ejecutando request de pineo: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("IPFS retornó status %d en pineo: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	fmt.Printf("✅ IPFS: CID %s pineado correctamente\n", cid)
+	return nil
 }
 
 // RecuperarJSON recupera datos JSON de IPFS usando el CID

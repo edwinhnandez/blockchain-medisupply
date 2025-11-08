@@ -4,17 +4,20 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/edinfamous/blockchain-medisupply/internal/models"
 )
 
 // CalcularHashTransaccion calcula el hash SHA-256 de una transacción
 func CalcularHashTransaccion(transaccion *models.Transaccion) string {
+	// Usar un formato de fecha explícito y consistente (RFC3339Nano) para evitar discrepancias
+	// al guardar y recuperar de la base de datos.
 	data := fmt.Sprintf("%s%s%s%s%s",
 		transaccion.IDTransaction,
 		transaccion.TipoEvento,
 		transaccion.IDProducto,
-		transaccion.FechaEvento.String(),
+		transaccion.FechaEvento.Format(time.RFC3339Nano),
 		transaccion.DatosEvento,
 	)
 	hash := sha256.Sum256([]byte(data))

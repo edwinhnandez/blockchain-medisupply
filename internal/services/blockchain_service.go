@@ -87,7 +87,8 @@ func NewBlockchainService(rpcURL string, privateKeyHex string, contractAddress s
 
 // RegistrarEnBlockchain registra un hash en la blockchain usando el smart contract
 // Si el contrato está configurado, usa el contrato. Si no, usa transacciones simples.
-func (s *BlockchainService) RegistrarEnBlockchain(ctx context.Context, hash, cid string) (string, error) {
+// Devuelve (hash lógico, hash de transacción de Ethereum, error)
+func (s *BlockchainService) RegistrarEnBlockchain(ctx context.Context, hash, cid string) (string, string, error) {
 	// Si tenemos un contrato configurado, usarlo
 	if s.contract != nil {
 		return s.registrarConContrato(ctx, hash, cid)
@@ -98,20 +99,20 @@ func (s *BlockchainService) RegistrarEnBlockchain(ctx context.Context, hash, cid
 }
 
 // registrarConContrato registra un hash usando el smart contract
-func (s *BlockchainService) registrarConContrato(ctx context.Context, hash, cid string) (string, error) {
+func (s *BlockchainService) registrarConContrato(ctx context.Context, hash, cid string) (string, string, error) {
 	// Preparar opciones de transacción
 	opts, err := s.GetTransactionOpts(ctx)
 	if err != nil {
-		return "", fmt.Errorf("error obteniendo opciones de transacción: %w", err)
+		return "", "", fmt.Errorf("error obteniendo opciones de transacción: %w", err)
 	}
 
 	// Convertir hash string a bytes32
 	hashBytes, err := hex.DecodeString(hash)
 	if err != nil {
-		return "", fmt.Errorf("error decodificando hash: %w", err)
+		return "", "", fmt.Errorf("error decodificando hash: %w", err)
 	}
 	if len(hashBytes) != 32 {
-		return "", fmt.Errorf("hash debe tener 32 bytes, tiene %d", len(hashBytes))
+		return "", "", fmt.Errorf("hash debe tener 32 bytes, tiene %d", len(hashBytes))
 	}
 	var hashBytes32 [32]byte
 	copy(hashBytes32[:], hashBytes)
@@ -124,28 +125,30 @@ func (s *BlockchainService) registrarConContrato(ctx context.Context, hash, cid 
 	// Llamar al contrato
 	tx, err := s.contract.RegistrarHash(opts, hashTransaccion, hashBytes32, cid)
 	if err != nil {
-		return "", fmt.Errorf("error registrando en contrato: %w", err)
+		return "", "", fmt.Errorf("error registrando en contrato: %w", err)
 	}
 
 	// Esperar confirmación
 	receipt, err := bind.WaitMined(ctx, s.client, tx)
 	if err != nil {
-		return "", fmt.Errorf("error esperando confirmación: %w", err)
+		return "", "", fmt.Errorf("error esperando confirmación: %w", err)
 	}
 
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		return "", fmt.Errorf("transacción falló en blockchain")
+		return "", "", fmt.Errorf("transacción falló en blockchain")
 	}
 
-	return tx.Hash().Hex(), nil
+	// Devolver el hash de transacción lógico que se usó como clave en el contrato
+	// Y el hash de la transacción de Ethereum para trazabilidad
+	return hex.EncodeToString(hashTransaccion[:]), tx.Hash().Hex(), nil
 }
 
 // registrarConTransaccionSimple registra usando una transacción simple (fallback)
-func (s *BlockchainService) registrarConTransaccionSimple(ctx context.Context, hash, cid string) (string, error) {
+func (s *BlockchainService) registrarConTransaccionSimple(ctx context.Context, hash, cid string) (string, string, error) {
 	publicKey := s.privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return "", fmt.Errorf("error casting public key")
+		return "", "", fmt.Errorf("error casting public key")
 	}
 
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
@@ -153,13 +156,13 @@ func (s *BlockchainService) registrarConTransaccionSimple(ctx context.Context, h
 	// Obtener nonce
 	nonce, err := s.client.PendingNonceAt(ctx, fromAddress)
 	if err != nil {
-		return "", fmt.Errorf("error obteniendo nonce: %w", err)
+		return "", "", fmt.Errorf("error obteniendo nonce: %w", err)
 	}
 
 	// Obtener gas price
 	gasPrice, err := s.client.SuggestGasPrice(ctx)
 	if err != nil {
-		return "", fmt.Errorf("error obteniendo gas price: %w", err)
+		return "", "", fmt.Errorf("error obteniendo gas price: %w", err)
 	}
 
 	// Preparar datos: hash + CID concatenados
@@ -178,34 +181,42 @@ func (s *BlockchainService) registrarConTransaccionSimple(ctx context.Context, h
 	// Firmar transacción
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(s.chainID), s.privateKey)
 	if err != nil {
-		return "", fmt.Errorf("error firmando transacción: %w", err)
+		return "", "", fmt.Errorf("error firmando transacción: %w", err)
 	}
 
 	// Enviar transacción
 	err = s.client.SendTransaction(ctx, signedTx)
 	if err != nil {
-		return "", fmt.Errorf("error enviando transacción: %w", err)
+		return "", "", fmt.Errorf("error enviando transacción: %w", err)
 	}
 
-	return signedTx.Hash().Hex(), nil
+	// En modo simple, el hash lógico y el de la tx son el mismo
+	txHash := signedTx.Hash().Hex()
+	return txHash, txHash, nil
 }
 
 // VerificarEnBlockchain verifica un hash contra la blockchain usando el smart contract
 func (s *BlockchainService) VerificarEnBlockchain(ctx context.Context, txHash, hashEsperado string) (bool, error) {
+	fmt.Printf("⛓️ BLOCKCHAIN_VERIFY: Iniciando verificación para TxHash: %s\n", txHash)
 	// Si tenemos un contrato, usar el método del contrato
 	if s.contract != nil {
+		fmt.Println("⛓️ BLOCKCHAIN_VERIFY: Usando modo 'verificarConContrato'")
 		return s.verificarConContrato(ctx, txHash, hashEsperado)
 	}
 
 	// Fallback: verificar en transacción simple
+	fmt.Println("⛓️ BLOCKCHAIN_VERIFY: Usando modo 'verificarConTransaccionSimple'")
 	return s.verificarConTransaccionSimple(ctx, txHash, hashEsperado)
 }
 
 // verificarConContrato verifica usando el smart contract
 func (s *BlockchainService) verificarConContrato(ctx context.Context, txHash, hashEsperado string) (bool, error) {
+	fmt.Printf("⛓️ BLOCKCHAIN_VERIFY (Contrato): Verificando TxHash: %s, HashEsperado: %s\n", txHash, hashEsperado)
+
 	// Convertir hash esperado a bytes32
 	hashBytes, err := hex.DecodeString(hashEsperado)
 	if err != nil {
+		fmt.Printf("🔴 BLOCKCHAIN_VERIFY (Contrato): Error decodificando hashEsperado: %v\n", err)
 		return false, fmt.Errorf("error decodificando hash: %w", err)
 	}
 	if len(hashBytes) != 32 {
@@ -213,49 +224,66 @@ func (s *BlockchainService) verificarConContrato(ctx context.Context, txHash, ha
 	}
 	var hashBytes32 [32]byte
 	copy(hashBytes32[:], hashBytes)
+	fmt.Printf("⛓️ BLOCKCHAIN_VERIFY (Contrato): HashEsperado convertido a bytes32: %x\n", hashBytes32)
 
 	// El txHash es el hashTransaccion que usamos en el registro
 	var hashTransaccion [32]byte
 	copy(hashTransaccion[:], common.HexToHash(txHash).Bytes())
+	fmt.Printf("⛓️ BLOCKCHAIN_VERIFY (Contrato): TxHash convertido a hashTransaccion: %x\n", hashTransaccion)
 
 	// Llamar al contrato
+	fmt.Println("⛓️ BLOCKCHAIN_VERIFY (Contrato): Llamando a s.contract.VerificarHash...")
 	valido, err := s.contract.VerificarHash(&bind.CallOpts{Context: ctx}, hashTransaccion, hashBytes32)
 	if err != nil {
+		fmt.Printf("🔴 BLOCKCHAIN_VERIFY (Contrato): Error en la llamada al contrato: %v\n", err)
 		return false, fmt.Errorf("error verificando en contrato: %w", err)
 	}
 
+	fmt.Printf("⛓️ BLOCKCHAIN_VERIFY (Contrato): Resultado de la llamada al contrato: %t\n", valido)
 	return valido, nil
 }
 
 // verificarConTransaccionSimple verifica en una transacción simple (fallback)
 func (s *BlockchainService) verificarConTransaccionSimple(ctx context.Context, txHash, hashEsperado string) (bool, error) {
+	fmt.Printf("⛓️ BLOCKCHAIN_VERIFY (Simple): Verificando TxHash: %s, HashEsperado: %s\n", txHash, hashEsperado)
+
 	// Obtener la transacción
 	tx, isPending, err := s.client.TransactionByHash(ctx, common.HexToHash(txHash))
 	if err != nil {
+		fmt.Printf("🔴 BLOCKCHAIN_VERIFY (Simple): Error obteniendo transacción: %v\n", err)
 		return false, fmt.Errorf("error obteniendo transacción: %w", err)
 	}
 
 	if isPending {
+		fmt.Println("🔴 BLOCKCHAIN_VERIFY (Simple): La transacción aún está pendiente")
 		return false, fmt.Errorf("transacción aún pendiente")
 	}
 
 	// Verificar que la transacción fue exitosa
 	receipt, err := s.client.TransactionReceipt(ctx, common.HexToHash(txHash))
 	if err != nil {
+		fmt.Printf("🔴 BLOCKCHAIN_VERIFY (Simple): Error obteniendo receipt: %v\n", err)
 		return false, fmt.Errorf("error obteniendo receipt: %w", err)
 	}
 
 	if receipt.Status != types.ReceiptStatusSuccessful {
+		fmt.Printf("🔴 BLOCKCHAIN_VERIFY (Simple): La transacción falló en blockchain (Status: %d)\n", receipt.Status)
 		return false, fmt.Errorf("transacción falló en blockchain")
 	}
+	fmt.Println("⛓️ BLOCKCHAIN_VERIFY (Simple): El receipt de la transacción es exitoso (Status: 1)")
 
 	// Extraer datos de la transacción
 	data := tx.Data()
 	dataStr := string(data)
+	fmt.Printf("⛓️ BLOCKCHAIN_VERIFY (Simple): Datos extraídos de la transacción: %s\n", dataStr)
 
 	// Verificar si el hash está en los datos
 	// Formato: "hash:cid"
-	return len(dataStr) > 0 && dataStr[:len(hashEsperado)] == hashEsperado, nil
+	fmt.Printf("⛓️ BLOCKCHAIN_VERIFY (Simple): Comparando datos extraídos ('%s') con hash esperado ('%s')\n", dataStr, hashEsperado)
+	resultado := len(dataStr) > 0 && strings.HasPrefix(dataStr, hashEsperado)
+	fmt.Printf("⛓️ BLOCKCHAIN_VERIFY (Simple): Resultado de la comparación: %t\n", resultado)
+
+	return resultado, nil
 }
 
 // ObtenerBalance obtiene el balance de la cuenta

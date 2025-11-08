@@ -10,7 +10,8 @@ type Transaccion struct {
 	FechaEvento         time.Time `json:"fechaEvento" dynamodbav:"fechaEvento" validate:"required"`
 	DatosEvento         string    `json:"datosEvento" dynamodbav:"datosEvento" validate:"required"` // JSON string con datos completos
 	HashEvento          string    `json:"hashEvento" dynamodbav:"hashEvento"`
-	DirectionBlockchain string    `json:"directionBlockchain" dynamodbav:"directionBlockchain"`
+	DirectionBlockchain string    `json:"directionBlockchain" dynamodbav:"directionBlockchain"` // Hash lógico usado como clave en el contrato
+	EthereumTxHash      string    `json:"ethereumTxHash" dynamodbav:"ethereumTxHash"`           // Hash de la transacción de Ethereum para Etherscan
 	IPFSCid             string    `json:"ipfsCid" dynamodbav:"ipfsCid"` // CID de IPFS para off-chain storage
 	ActorEmisor         string    `json:"actorEmisor" dynamodbav:"actorEmisor" validate:"required"`
 	Estado              string    `json:"estado" dynamodbav:"estado" validate:"required,oneof=pendiente confirmado fallido"`
@@ -35,6 +36,7 @@ type TransaccionResponse struct {
 	FechaEvento         time.Time `json:"fechaEvento"`
 	HashEvento          string    `json:"hashEvento"`
 	DirectionBlockchain string    `json:"directionBlockchain"`
+	EthereumTxHash      string    `json:"ethereumTxHash"`
 	IPFSCid             string    `json:"ipfsCid"`
 	ActorEmisor         string    `json:"actorEmisor"`
 	Estado              string    `json:"estado"`
@@ -56,7 +58,8 @@ type EstadoBlockchainResponse struct {
 	IDTransaction       string `json:"idTransaction"`
 	Estado              string `json:"estado"`              // pendiente, confirmado, fallido
 	RegistradoEnBlockchain bool   `json:"registradoEnBlockchain"` // true si tiene txHash
-	DirectionBlockchain string `json:"directionBlockchain"` // txHash de blockchain
+	DirectionBlockchain string `json:"directionBlockchain"` // txHash de blockchain (hash lógico)
+	EthereumTxHash      string `json:"ethereumTxHash,omitempty"` // Hash de la transacción de Ethereum para Etherscan
 	Mensaje             string `json:"mensaje"`
 	Timestamp           string `json:"timestamp,omitempty"`
 }

@@ -53,10 +53,7 @@ contract MediSupplyRegistry {
         string memory cid
     ) public returns (bytes32 hashTx) {
         // Verificar que el hash no esté ya registrado
-        require(
-            !registros[hashTransaccion].existe,
-            "El hash ya está registrado"
-        );
+        require(!registros[hashTransaccion].existe, "El hash ya esta registrado");
 
         // Crear nuevo registro
         Registro memory nuevoRegistro = Registro({
@@ -90,21 +87,19 @@ contract MediSupplyRegistry {
      * @param hashEsperado El hash esperado de los datos
      * @return valido True si el hash está registrado y coincide
      */
-    function verificarHash(
-        bytes32 hashTransaccion,
-        bytes32 hashEsperado
-    ) public view returns (bool valido) {
-        Registro memory registro = registros[hashTransaccion];
-        
-        if (!registro.existe) {
-            emit HashVerificado(hashTransaccion, bytes32(0), false);
-            return false;
-        }
-
-        bool esValido = registro.hash == hashEsperado;
-        
-        return esValido;
+   function verificarHash(
+    bytes32 hashTransaccion,
+    bytes32 hashEsperado
+) public view returns (bool valido) {
+    Registro memory registro = registros[hashTransaccion];
+    
+    if (!registro.existe) {
+        return false;
     }
+
+    return registro.hash == hashEsperado;
+}
+
 
     /**
      * @dev Obtiene información completa de un registro
@@ -164,8 +159,9 @@ contract MediSupplyRegistry {
      */
     function obtenerRegistroPorIndice(
         uint256 indice
+        
     ) public view returns (bytes32 hashTransaccion) {
-        require(indice < todosLosRegistros.length, "Índice fuera de rango");
+        require(indice < todosLosRegistros.length, "Indice fuera de rango");
         return todosLosRegistros[indice];
     }
 }
